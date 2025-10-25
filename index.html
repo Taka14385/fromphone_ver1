@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ESP32 BLE Joystick</title>
+  <style>
+    body { text-align: center; font-family: sans-serif; background: #fafafa; }
+    h2 { margin-top: 20px; }
+    #status {
+      position: absolute; top: 10px; left: 10px;
+      text-align: left;
+      font-size: 14px;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 8px;
+      border-radius: 8px;
+      width: 220px;
+      box-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+    }
+    #joystick {
+      margin: 40px auto;
+      width: 300px; height: 300px;
+      background: #eee;
+      border-radius: 50%;
+      position: relative;
+      touch-action: none;
+    }
+    #stick {
+      width: 80px; height: 80px;
+      background: #2196f3;
+      border-radius: 50%;
+      position: absolute;
+      top: 110px; left: 110px;
+      transition: 0.05s;
+    }
+    button {
+      font-size: 18px;
+      padding: 10px 20px;
+      margin: 8px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      background: #2196f3;
+      color: white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      transition: background 0.2s;
+    }
+    button:active, button.pressed {
+      background: #1565c0;
+    }
+    #rotationButtons {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      margin-top: 10px;
+    }
+    #rotationButtons button {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+    }
+  </style>
+</head>
+<body>
+  <h2>ESP32 BLE Joystick Controller</h2>
+  <div id="status">未接続</div>
+  <button id="connectBtn">接続</button>
+
+  <div id="joystick">
+    <div id="stick"></div>
+  </div>
+
+  <div id="rotationButtons">
+    <button id="leftRotate">⟲</button>
+    <button id="rightRotate">⟳</button>
+  </div>
+
+  <script>
+    const SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0";
+    const CHARACTERISTIC_UUID = "abcd1234-1234-5678-1234-56789abcdef0";
+
+    let characteristic = null;
+    let device = null;
+    let connected = false;
+    let omega = 0;
+
+    const statusBox = document.getElementById("status");
+    const connectBtn = document.getElementById("connectBtn");
+
+    // =========================
+    // BLE接続 + 自動再接続
+    // =========================
+    async function connectBLE() {
+      if (connected) return; // つまり防止
+      try {
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: "ESP32_BLE_Server" }],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        device.addEventListener('gattserverdisconnected', reconnectBLE);
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+        connected = true;
+        statusBox.textContent = "✅ 接続完了：ESP32_BLE_Server";
+      } catch (error) {
+        statusBox.textContent = "❌ 接続失敗: " + error;
+      }
+    }
+
+    // 自動再接続処理
+    async function reconnectBLE() {
+      connected = false;
+      statusBox.textContent = "⚠️ 切断されました。再接続中...";
+      try {
+        await new Promise(r => setTimeout(r, 1000));
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+        connected = true;
+        statusBox.textContent = "🔄 自動再接続成功";
+      } catch (err) {
+        statusBox.textContent = "❌ 再接続失敗。再試行中...";
+        setTimeout(reconnectBLE, 2000);
+      }
+    }
+
+    connectBtn.addEventListener("click", connectBLE);
+
+    // =========================
+    // ジョイスティック処理
+    // =========================
+    const joy = document.getElementById("joystick");
+    const stick = document.getElementById("stick");
+    const radius = 150;
+    const stickR = 40;
+    const DEADZONE = 0.15;
+
+    function applyDeadzone(v) {
+      const dz = DEADZONE;
+      if (Math.abs(v) < dz) return 0;
+      if (v > 0) return (v - dz) / (1 - dz);
+      else return (v + dz) / (1 - dz);
+    }
+
+    let centerX = radius;
+    let centerY = radius;
+    let active = false;
+
+    joy.addEventListener("pointerdown", (e) => { active = true; move(e); });
+    joy.addEventListener("pointermove", (e) => { if (active) move(e); });
+    joy.addEventListener("pointerup", reset);
+    joy.addEventListener("pointerleave", reset);
+
+    function move(e) {
+      const rect = joy.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      let dx = x - centerX;
+      let dy = y - centerY;
+      const dist = Math.min(Math.hypot(dx, dy), radius - stickR);
+      const angle = Math.atan2(dy, dx);
+      const posX = Math.cos(angle) * dist;
+      const posY = Math.sin(angle) * dist;
+
+      stick.style.left = (centerX + posX - stickR) + "px";
+      stick.style.top = (centerY + posY - stickR) + "px";
+
+      const rawX = posX / (radius - stickR);
+      const rawY = -posY / (radius - stickR);
+      const adjX = applyDeadzone(rawX);
+      const adjY = applyDeadzone(rawY);
+
+      sendJoystick(adjX.toFixed(2), adjY.toFixed(2), omega);
+    }
+
+    function reset() {
+      active = false;
+      stick.style.left = (centerX - stickR) + "px";
+      stick.style.top = (centerY - stickR) + "px";
+      sendJoystick(0, 0, omega);
+    }
+
+    // =========================
+    // 回転ボタン
+    // =========================
+    const leftBtn = document.getElementById("leftRotate");
+    const rightBtn = document.getElementById("rightRotate");
+
+    leftBtn.addEventListener("mousedown", () => {
+      omega = -1; leftBtn.classList.add("pressed"); sendJoystick(0, 0, omega);
+    });
+    leftBtn.addEventListener("mouseup", () => {
+      omega = 0; leftBtn.classList.remove("pressed"); sendJoystick(0, 0, omega);
+    });
+
+    rightBtn.addEventListener("mousedown", () => {
+      omega = 1; rightBtn.classList.add("pressed"); sendJoystick(0, 0, omega);
+    });
+    rightBtn.addEventListener("mouseup", () => {
+      omega = 0; rightBtn.classList.remove("pressed"); sendJoystick(0, 0, omega);
+    });
+
+    // =========================
+    // データ送信
+    // =========================
+    async function sendJoystick(x, y, w) {
+      if (!connected || !characteristic) return;
+      const msg = `${x},${y},${w}`;
+      const encoder = new TextEncoder();
+      try {
+        await characteristic.writeValue(encoder.encode(msg));
+        statusBox.textContent = `送信: vx=${x}, vy=${y}, ω=${w}`;
+      } catch (e) {
+        statusBox.textContent = "⚠️ 送信エラー。再接続中...";
+        reconnectBLE();
+      }
+    }
+  </script>
+</body>
+</html>
