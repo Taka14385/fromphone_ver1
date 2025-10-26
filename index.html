@@ -1,223 +1,385 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>ESP32 BLE Joystick</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ESP32 BLE Joystick + 4 Servos</title>
   <style>
-    body { text-align: center; font-family: sans-serif; background: #fafafa; }
-    h2 { margin-top: 20px; }
-    #status {
-      position: absolute; top: 10px; left: 10px;
-      text-align: left;
-      font-size: 14px;
-      background: #fff;
-      border: 1px solid #ccc;
-      padding: 8px;
-      border-radius: 8px;
-      width: 220px;
-      box-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+    :root{
+      --bg:#0f1720; /* dark navy */
+      --card:#0b1220;
+      --panel:#111827;
+      --accent:#0ea5e9; /* blue */
+      --muted:#94a3b8;
+      --glass: rgba(255,255,255,0.03);
+      --radius:14px;
     }
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:linear-gradient(180deg,var(--bg),#071018);color:#e6eef6}
+    .app {
+      display:grid;
+      grid-template-columns: 1fr 340px;
+      gap:20px;
+      max-width:1100px;
+      margin:18px auto;
+      padding:16px;
+    }
+
+    /* responsive: on small screens stack vertically and sliders collapse below */
+    @media (max-width:900px){
+      .app{grid-template-columns:1fr; padding:12px;}
+      .side { order: 2; }
+      .main { order: 1; }
+      .sliders { flex-direction:row; gap:8px; justify-content:center; flex-wrap:wrap; }
+      .servoCard { width:46%; }
+    }
+
+    .card{
+      background: linear-gradient(180deg,var(--card),#06101a);
+      border-radius:var(--radius);
+      padding:14px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.04);
+    }
+
+    /* Main area (joystick + rotation) */
+    .main { display:flex; flex-direction:column; gap:16px; min-height:380px; }
+    h2{margin:0 0 6px 0;font-size:18px;color:var(--accent)}
+    .statusRow{display:flex;align-items:center;gap:12px;justify-content:space-between}
+    #status{
+      font-size:13px;padding:8px 10px;border-radius:10px;background:var(--glass);color:var(--muted);
+      display:inline-block; min-width:220px;
+    }
+    #connectBtn{
+      background:var(--accent); color:#021026; border:none; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer;
+      box-shadow: 0 6px 12px rgba(14,165,233,0.12);
+    }
+    #connectBtn.connecting { opacity:0.9; transform:translateY(0); }
+
+    .controller {
+      display:flex; gap:18px; align-items:center; justify-content:center; padding:8px;
+      flex-wrap:wrap;
+    }
+
+    /* Joystick area */
     #joystick {
-      margin: 40px auto;
-      width: 300px; height: 300px;
-      background: #eee;
-      border-radius: 50%;
-      position: relative;
+      width:320px; height:320px; border-radius:50%; background: linear-gradient(180deg,#0b1320,#07101a);
+      position:relative; display:flex;align-items:center;justify-content:center;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6), inset 0 -8px 24px rgba(255,255,255,0.02);
       touch-action: none;
     }
-    #stick {
-      width: 80px; height: 80px;
-      background: #2196f3;
-      border-radius: 50%;
-      position: absolute;
-      top: 110px; left: 110px;
-      transition: 0.05s;
+    .gridRings{ position:absolute; inset:0; border-radius:50%; pointer-events:none;
+      background:
+        radial-gradient(circle at center, rgba(255,255,255,0.02) 0, rgba(255,255,255,0.0) 60%),
+        radial-gradient(circle, rgba(255,255,255,0.01) 1px, transparent 1px);
+      opacity:0.6;
     }
-    button {
-      font-size: 18px;
-      padding: 10px 20px;
-      margin: 8px;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      background: #2196f3;
-      color: white;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-      transition: background 0.2s;
+    #stick{
+      width:96px;height:96px;border-radius:50%; background:linear-gradient(180deg,var(--accent),#0369a1);
+      box-shadow: 0 6px 18px rgba(10,140,200,0.24), 0 2px 6px rgba(0,0,0,0.6);
+      position:absolute; transform:translate(-50%,-50%); left:50%; top:50%;
+      touch-action: none;
     }
-    button:active, button.pressed {
-      background: #1565c0;
+
+    /* Rotation buttons */
+    #rotationButtons{display:flex;flex-direction:column;gap:12px;align-items:center}
+    .rotBtn{
+      width:86px;height:86px;border-radius:50%; border:none; font-size:30px; display:flex;align-items:center;justify-content:center;
+      background:#0b1622;color:var(--accent); box-shadow:0 8px 18px rgba(0,0,0,0.6); cursor:pointer;
+      user-select:none;
     }
-    #rotationButtons {
-      display: flex;
-      justify-content: center;
-      gap: 40px;
-      margin-top: 10px;
+    .rotBtn.pressed{ transform: translateY(2px); opacity:0.9; filter:brightness(1.05); }
+
+    /* Side (sliders) */
+    .side { width:100%; max-width:360px; }
+    .sliders{ display:flex; flex-direction:column; gap:12px; margin-top:10px; }
+    .servoCard{
+      display:flex; gap:12px; align-items:center; justify-content:space-between;
+      padding:10px; border-radius:12px; background:linear-gradient(180deg,#071018,#061018);
     }
-    #rotationButtons button {
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
+    .servoLabel{ font-size:14px; color:var(--muted); width:72px; }
+    .servoControl{ display:flex; gap:10px; align-items:center; width:100%; }
+    input[type="range"]{
+      -webkit-appearance:none; appearance:none; height:36px; width:100%;
+      background:transparent; touch-action:none;
     }
+    input[type="range"]::-webkit-slider-runnable-track{
+      height:8px; border-radius:20px; background: linear-gradient(90deg,#0b1220,#083247); box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+    }
+    input[type="range"]::-webkit-slider-thumb{
+      -webkit-appearance:none; width:34px; height:34px; border-radius:50%; margin-top:-13px;
+      background:linear-gradient(180deg,var(--accent),#0369a1); box-shadow:0 6px 16px rgba(10,140,200,0.22);
+    }
+    .servoValue{ width:48px; text-align:center; font-weight:700; color:#e6eef6; font-size:15px; }
+
+    /* small helper text */
+    .hint{ font-size:12px;color:var(--muted); margin-top:6px }
   </style>
 </head>
 <body>
-  <h2>ESP32 BLE Joystick Controller</h2>
-  <div id="status">未接続</div>
-  <button id="connectBtn">接続</button>
+  <div class="app">
+    <div class="main card">
+      <h2>ESP32 BLE Joystick Controller</h2>
+      <div class="statusRow">
+        <div id="status">未接続</div>
+        <button id="connectBtn">接続</button>
+      </div>
 
-  <div id="joystick">
-    <div id="stick"></div>
+      <div class="controller">
+        <div id="joystick" aria-label="joystick">
+          <div class="gridRings"></div>
+          <div id="stick" role="application" aria-label="stick"></div>
+        </div>
+
+        <div id="rotationButtons">
+          <button id="leftRotate" class="rotBtn" aria-label="rotate left">⟲</button>
+          <button id="rightRotate" class="rotBtn" aria-label="rotate right">⟳</button>
+        </div>
+      </div>
+
+      <div class="hint">※ スティックは指で押してドラッグ、指を離すと中心に戻ります。回転は押している間だけ回転コマンド。</div>
+    </div>
+
+    <div class="side card">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font-weight:700">Servo Controls</div>
+        <div style="font-size:13px;color:var(--muted)">0〜180</div>
+      </div>
+
+      <div class="sliders">
+        <!-- servo 1 -->
+        <div class="servoCard">
+          <div class="servoLabel">Servo 1</div>
+          <div class="servoControl">
+            <input id="s1" type="range" min="0" max="180" value="90" />
+            <div class="servoValue" id="s1val">90</div>
+          </div>
+        </div>
+
+        <div class="servoCard">
+          <div class="servoLabel">Servo 2</div>
+          <div class="servoControl">
+            <input id="s2" type="range" min="0" max="180" value="90" />
+            <div class="servoValue" id="s2val">90</div>
+          </div>
+        </div>
+
+        <div class="servoCard">
+          <div class="servoLabel">Servo 3</div>
+          <div class="servoControl">
+            <input id="s3" type="range" min="0" max="180" value="90" />
+            <div class="servoValue" id="s3val">90</div>
+          </div>
+        </div>
+
+        <div class="servoCard">
+          <div class="servoLabel">Servo 4</div>
+          <div class="servoControl">
+            <input id="s4" type="range" min="0" max="180" value="90" />
+            <div class="servoValue" id="s4val">90</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div id="rotationButtons">
-    <button id="leftRotate">⟲</button>
-    <button id="rightRotate">⟳</button>
-  </div>
+<script>
+  const SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0";
+  const CHARACTERISTIC_UUID = "abcd1234-1234-5678-1234-56789abcdef0";
 
-  <script>
-    const SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0";
-    const CHARACTERISTIC_UUID = "abcd1234-1234-5678-1234-56789abcdef0";
+  let device = null;
+  let characteristic = null;
+  let connected = false;
 
-    let characteristic = null;
-    let device = null;
-    let connected = false;
-    let omega = 0;
+  const statusBox = document.getElementById("status");
+  const connectBtn = document.getElementById("connectBtn");
 
-    const statusBox = document.getElementById("status");
-    const connectBtn = document.getElementById("connectBtn");
+  // joystick vars
+  const joy = document.getElementById("joystick");
+  const stick = document.getElementById("stick");
+  const radius = 160; // match half of 320
+  const stickR = 48; // half of 96
+  const DEADZONE = 0.15;
+  let centerX = radius, centerY = radius;
+  let active = false;
+  let omega = 0;
 
-    // =========================
-    // BLE接続 + 自動再接続
-    // =========================
-    async function connectBLE() {
-      if (connected) return; // つまり防止
-      try {
-        device = await navigator.bluetooth.requestDevice({
-          filters: [{ name: "ESP32_BLE_Server" }],
-          optionalServices: [SERVICE_UUID]
-        });
+  // servo elements
+  const sEls = [1,2,3,4].map(i => document.getElementById('s'+i));
+  const sVals = [1,2,3,4].map(i => document.getElementById('s'+i+'val'));
 
-        device.addEventListener('gattserverdisconnected', reconnectBLE);
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+  // update slider labels & send when changed (debounced)
+  for (let i=0;i<4;i++){
+    const el = sEls[i];
+    const disp = sVals[i];
+    const sendAfterChange = debounce(()=> sendJoystick(currentX.toFixed(2), currentY.toFixed(2), omega), 50);
+    el.addEventListener('input', ()=>{ disp.textContent = el.value; sendAfterChange(); });
+    // ensure pointer-events suitable for touch
+    el.addEventListener('pointerdown', (e)=> e.stopPropagation());
+  }
 
-        connected = true;
-        statusBox.textContent = "✅ 接続完了：ESP32_BLE_Server";
-      } catch (error) {
-        statusBox.textContent = "❌ 接続失敗: " + error;
-      }
-    }
+  // connect / disconnect
+  connectBtn.addEventListener('click', async () => {
+    if (connected) { disconnectBLE(); return; }
+    await connectBLE();
+  });
 
-    // 自動再接続処理
-    async function reconnectBLE() {
+  async function connectBLE(){
+    if (connected) return;
+    statusBox.textContent = "接続要求中...";
+    try {
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: "ESP32_BLE_Server" }],
+        optionalServices: [SERVICE_UUID]
+      });
+      device.addEventListener('gattserverdisconnected', onDisconnected);
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+      connected = true;
+      connectBtn.textContent = "切断";
+      statusBox.textContent = "✅ 接続完了：ESP32_BLE_Server";
+    } catch (err) {
+      statusBox.textContent = "❌ 接続失敗: " + (err && err.message ? err.message : err);
       connected = false;
-      statusBox.textContent = "⚠️ 切断されました。再接続中...";
-      try {
-        await new Promise(r => setTimeout(r, 1000));
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-        connected = true;
-        statusBox.textContent = "🔄 自動再接続成功";
-      } catch (err) {
-        statusBox.textContent = "❌ 再接続失敗。再試行中...";
-        setTimeout(reconnectBLE, 2000);
-      }
     }
+  }
 
-    connectBtn.addEventListener("click", connectBLE);
+  function disconnectBLE(){
+    if (!device) return;
+    try { device.gatt.disconnect(); } catch(e){}
+    connected = false;
+    characteristic = null;
+    connectBtn.textContent = "接続";
+    statusBox.textContent = "切断済み";
+  }
 
-    // =========================
-    // ジョイスティック処理
-    // =========================
-    const joy = document.getElementById("joystick");
-    const stick = document.getElementById("stick");
-    const radius = 150;
-    const stickR = 40;
-    const DEADZONE = 0.15;
+  function onDisconnected(){
+    connected = false;
+    characteristic = null;
+    connectBtn.textContent = "接続";
+    statusBox.textContent = "⚠️ 切断されました。再接続してください。";
+  }
 
-    function applyDeadzone(v) {
-      const dz = DEADZONE;
-      if (Math.abs(v) < dz) return 0;
-      if (v > 0) return (v - dz) / (1 - dz);
-      else return (v + dz) / (1 - dz);
+  // auto-reconnect attempt helper (not background looping aggressive)
+  async function tryReconnect(){
+    if (!device) return;
+    statusBox.textContent = "再接続試行...";
+    try {
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+      connected = true;
+      connectBtn.textContent = "切断";
+      statusBox.textContent = "🔄 自動再接続成功";
+    } catch (e) {
+      statusBox.textContent = "再接続失敗";
     }
+  }
 
-    let centerX = radius;
-    let centerY = radius;
-    let active = false;
+  // joystick math
+  function applyDeadzone(v){
+    const dz = DEADZONE;
+    if (Math.abs(v) < dz) return 0;
+    return v > 0 ? (v - dz)/(1 - dz) : (v + dz)/(1 - dz);
+  }
 
-    joy.addEventListener("pointerdown", (e) => { active = true; move(e); });
-    joy.addEventListener("pointermove", (e) => { if (active) move(e); });
-    joy.addEventListener("pointerup", reset);
-    joy.addEventListener("pointerleave", reset);
+  let currentX = 0, currentY = 0;
 
-    function move(e) {
-      const rect = joy.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      let dx = x - centerX;
-      let dy = y - centerY;
-      const dist = Math.min(Math.hypot(dx, dy), radius - stickR);
-      const angle = Math.atan2(dy, dx);
-      const posX = Math.cos(angle) * dist;
-      const posY = Math.sin(angle) * dist;
+  joy.addEventListener('pointerdown', (e)=>{ active=true; joy.setPointerCapture(e.pointerId); move(e); });
+  joy.addEventListener('pointermove', (e)=>{ if(active) move(e); });
+  joy.addEventListener('pointerup', (e)=>{ active=false; joy.releasePointerCapture(e.pointerId); reset(); });
+  joy.addEventListener('pointerleave', (e)=>{ if(active){ active=false; reset(); } });
 
-      stick.style.left = (centerX + posX - stickR) + "px";
-      stick.style.top = (centerY + posY - stickR) + "px";
+  function move(e){
+    const rect = joy.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    let dx = x - centerX;
+    let dy = y - centerY;
+    const dist = Math.min(Math.hypot(dx,dy), radius - stickR);
+    const angle = Math.atan2(dy, dx);
+    const posX = Math.cos(angle) * dist;
+    const posY = Math.sin(angle) * dist;
+    stick.style.left = (centerX + posX) + 'px';
+    stick.style.top = (centerY + posY) + 'px';
+    const rawX = posX / (radius - stickR);
+    const rawY = -posY / (radius - stickR); // y up positive
+    const adjX = applyDeadzone(rawX);
+    const adjY = applyDeadzone(rawY);
+    currentX = adjX; currentY = adjY;
+    sendJoystick(adjX.toFixed(2), adjY.toFixed(2), omega);
+  }
 
-      const rawX = posX / (radius - stickR);
-      const rawY = -posY / (radius - stickR);
-      const adjX = applyDeadzone(rawX);
-      const adjY = applyDeadzone(rawY);
+  function reset(){
+    stick.style.left = centerX + 'px';
+    stick.style.top = centerY + 'px';
+    currentX = 0; currentY = 0;
+    sendJoystick(0,0,omega);
+  }
 
-      sendJoystick(adjX.toFixed(2), adjY.toFixed(2), omega);
+  // rotation buttons: pointer events so works on touch
+  const leftBtn = document.getElementById('leftRotate');
+  const rightBtn = document.getElementById('rightRotate');
+
+  const pressStart = (btn, val)=>{
+    omega = val; btn.classList.add('pressed'); sendJoystick(currentX.toFixed(2), currentY.toFixed(2), omega);
+  };
+  const pressEnd = (btn)=>{
+    omega = 0; btn.classList.remove('pressed'); sendJoystick(currentX.toFixed(2), currentY.toFixed(2), omega);
+  };
+
+  ['pointerdown','touchstart'].forEach(ev => {
+    leftBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); pressStart(leftBtn,-1); });
+    rightBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); pressStart(rightBtn,1); });
+  });
+  ['pointerup','pointercancel','touchend','touchcancel','mouseleave'].forEach(ev=>{
+    leftBtn.addEventListener(ev, ()=> pressEnd(leftBtn));
+    rightBtn.addEventListener(ev, ()=> pressEnd(rightBtn));
+  });
+
+  // sendJoystick: builds string vx,vy,w,s1,s2,s3,s4
+  async function sendJoystick(x,y,w){
+    if (!connected || !characteristic) {
+      statusBox.textContent = "未接続: 送信スキップ";
+      return;
     }
-
-    function reset() {
-      active = false;
-      stick.style.left = (centerX - stickR) + "px";
-      stick.style.top = (centerY - stickR) + "px";
-      sendJoystick(0, 0, omega);
+    const s1 = parseInt(sEls[0].value);
+    const s2 = parseInt(sEls[1].value);
+    const s3 = parseInt(sEls[2].value);
+    const s4 = parseInt(sEls[3].value);
+    const msg = `${x},${y},${w},${s1},${s2},${s3},${s4}`;
+    const enc = new TextEncoder();
+    try {
+      await characteristic.writeValue(enc.encode(msg));
+      statusBox.textContent = `送信: vx=${x}, vy=${y}, ω=${w}  s:[${s1},${s2},${s3},${s4}]`;
+    } catch (e) {
+      statusBox.textContent = "⚠️ 送信エラー: 再接続を試みます";
+      tryReconnect();
     }
+  }
 
-    // =========================
-    // 回転ボタン
-    // =========================
-    const leftBtn = document.getElementById("leftRotate");
-    const rightBtn = document.getElementById("rightRotate");
+  // debounce helper
+  function debounce(fn, wait){
+    let t;
+    return function(...a){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,a), wait); };
+  }
 
-    leftBtn.addEventListener("mousedown", () => {
-      omega = -1; leftBtn.classList.add("pressed"); sendJoystick(0, 0, omega);
-    });
-    leftBtn.addEventListener("mouseup", () => {
-      omega = 0; leftBtn.classList.remove("pressed"); sendJoystick(0, 0, omega);
-    });
+  // initialize stick center positions on load/resize
+  function layout(){
+    // compute center relative coords
+    const rect = joy.getBoundingClientRect();
+    centerX = rect.width / 2;
+    centerY = rect.height / 2;
+    // ensure stick at center
+    stick.style.left = centerX + 'px';
+    stick.style.top = centerY + 'px';
+  }
+  window.addEventListener('resize', layout);
+  window.addEventListener('load', layout);
 
-    rightBtn.addEventListener("mousedown", () => {
-      omega = 1; rightBtn.classList.add("pressed"); sendJoystick(0, 0, omega);
-    });
-    rightBtn.addEventListener("mouseup", () => {
-      omega = 0; rightBtn.classList.remove("pressed"); sendJoystick(0, 0, omega);
-    });
+  // initial send of neutral state + servo defaults after short delay
+  setTimeout(()=> sendJoystick(0,0,0), 400);
 
-    // =========================
-    // データ送信
-    // =========================
-    async function sendJoystick(x, y, w) {
-      if (!connected || !characteristic) return;
-      const msg = `${x},${y},${w}`;
-      const encoder = new TextEncoder();
-      try {
-        await characteristic.writeValue(encoder.encode(msg));
-        statusBox.textContent = `送信: vx=${x}, vy=${y}, ω=${w}`;
-      } catch (e) {
-        statusBox.textContent = "⚠️ 送信エラー。再接続中...";
-        reconnectBLE();
-      }
-    }
-  </script>
+</script>
 </body>
 </html>
