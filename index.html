@@ -6,42 +6,48 @@
   <title>ESP32 BLE Joystick + 4 Servos</title>
   <style>
     :root{
-      --bg:#0f1720; /* dark navy */
+      --bg:#1a2430;
       --card:#0b1220;
       --panel:#111827;
-      --accent:#0ea5e9; /* blue */
+      --accent:#0ea5e9;
       --muted:#94a3b8;
       --glass: rgba(255,255,255,0.03);
       --radius:14px;
     }
-    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:linear-gradient(180deg,var(--bg),#071018);color:#e6eef6}
+    html,body{
+      height:100%;margin:0;
+      font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;
+      background:linear-gradient(180deg,var(--bg),#192735);
+      color:#e6eef6;
+    }
+
     .app {
       display:grid;
-      grid-template-columns: 1fr 340px;
+      grid-template-columns: 1fr 360px;
       gap:20px;
-      max-width:1100px;
+      max-width:1150px;
       margin:18px auto;
       padding:16px;
     }
 
-    /* responsive: on small screens stack vertically and sliders collapse below */
     @media (max-width:900px){
       .app{grid-template-columns:1fr; padding:12px;}
       .side { order: 2; }
       .main { order: 1; }
-      .sliders { flex-direction:row; gap:8px; justify-content:center; flex-wrap:wrap; }
-      .servoCard { width:46%; }
+      .sliders { flex-direction:row; gap:10px; justify-content:center; flex-wrap:wrap; }
+      .servoCard { width:90%; }
+      input[type="range"]{ width:90vw; }
+      #joystick { width:260px; height:260px; }
     }
 
     .card{
-      background: linear-gradient(180deg,var(--card),#06101a);
+      background: linear-gradient(180deg,var(--card),#08131f);
       border-radius:var(--radius);
       padding:14px;
       box-shadow: 0 6px 18px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
       border: 1px solid rgba(255,255,255,0.04);
     }
 
-    /* Main area (joystick + rotation) */
     .main { display:flex; flex-direction:column; gap:16px; min-height:380px; }
     h2{margin:0 0 6px 0;font-size:18px;color:var(--accent)}
     .statusRow{display:flex;align-items:center;gap:12px;justify-content:space-between}
@@ -53,65 +59,74 @@
       background:var(--accent); color:#021026; border:none; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer;
       box-shadow: 0 6px 12px rgba(14,165,233,0.12);
     }
-    #connectBtn.connecting { opacity:0.9; transform:translateY(0); }
 
     .controller {
-      display:flex; gap:18px; align-items:center; justify-content:center; padding:8px;
-      flex-wrap:wrap;
+      display:flex; gap:18px; align-items:center; justify-content:center; padding:8px; flex-wrap:wrap;
     }
 
-    /* Joystick area */
     #joystick {
-      width:320px; height:320px; border-radius:50%; background: linear-gradient(180deg,#0b1320,#07101a);
+      width:320px; height:320px; border-radius:50%;
+      background: radial-gradient(circle at 50% 45%, #0b1320 0%, #071018 80%);
       position:relative; display:flex;align-items:center;justify-content:center;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.6), inset 0 -8px 24px rgba(255,255,255,0.02);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5), inset 0 -8px 24px rgba(255,255,255,0.04);
       touch-action: none;
+      border: 2px solid rgba(255,255,255,0.08);
     }
-    .gridRings{ position:absolute; inset:0; border-radius:50%; pointer-events:none;
+    .gridRings{
+      position:absolute; inset:0; border-radius:50%; pointer-events:none;
       background:
-        radial-gradient(circle at center, rgba(255,255,255,0.02) 0, rgba(255,255,255,0.0) 60%),
-        radial-gradient(circle, rgba(255,255,255,0.01) 1px, transparent 1px);
-      opacity:0.6;
+        radial-gradient(circle at center, rgba(255,255,255,0.05) 0, rgba(255,255,255,0.0) 60%),
+        radial-gradient(circle, rgba(255,255,255,0.02) 1px, transparent 1px);
+      opacity:0.7;
     }
     #stick{
-      width:96px;height:96px;border-radius:50%; background:linear-gradient(180deg,var(--accent),#0369a1);
+      width:96px;height:96px;border-radius:50%;
+      background:linear-gradient(180deg,var(--accent),#0369a1);
       box-shadow: 0 6px 18px rgba(10,140,200,0.24), 0 2px 6px rgba(0,0,0,0.6);
       position:absolute; transform:translate(-50%,-50%); left:50%; top:50%;
       touch-action: none;
+      transition: left 0.02s linear, top 0.02s linear;
     }
 
-    /* Rotation buttons */
     #rotationButtons{display:flex;flex-direction:column;gap:12px;align-items:center}
     .rotBtn{
-      width:86px;height:86px;border-radius:50%; border:none; font-size:30px; display:flex;align-items:center;justify-content:center;
-      background:#0b1622;color:var(--accent); box-shadow:0 8px 18px rgba(0,0,0,0.6); cursor:pointer;
-      user-select:none;
+      width:86px;height:86px;border-radius:50%; border:none;
+      font-size:30px; display:flex;align-items:center;justify-content:center;
+      background:#0b1622;color:var(--accent);
+      box-shadow:0 8px 18px rgba(0,0,0,0.6);
+      cursor:pointer; user-select:none;
+      touch-action: manipulation;
     }
     .rotBtn.pressed{ transform: translateY(2px); opacity:0.9; filter:brightness(1.05); }
 
-    /* Side (sliders) */
-    .side { width:100%; max-width:360px; }
-    .sliders{ display:flex; flex-direction:column; gap:12px; margin-top:10px; }
+    .side { width:100%; max-width:380px; }
+    .sliders{ display:flex; flex-direction:column; gap:16px; margin-top:10px; }
     .servoCard{
       display:flex; gap:12px; align-items:center; justify-content:space-between;
-      padding:10px; border-radius:12px; background:linear-gradient(180deg,#071018,#061018);
+      padding:12px; border-radius:12px;
+      background:linear-gradient(180deg,#08141c,#061018);
+      box-shadow:inset 0 0 4px rgba(255,255,255,0.02);
     }
     .servoLabel{ font-size:14px; color:var(--muted); width:72px; }
     .servoControl{ display:flex; gap:10px; align-items:center; width:100%; }
     input[type="range"]{
-      -webkit-appearance:none; appearance:none; height:36px; width:100%;
+      -webkit-appearance:none; appearance:none;
+      height:40px; width:100%;
       background:transparent; touch-action:none;
     }
     input[type="range"]::-webkit-slider-runnable-track{
-      height:8px; border-radius:20px; background: linear-gradient(90deg,#0b1220,#083247); box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+      height:10px; border-radius:20px;
+      background: linear-gradient(90deg,#0d1828,#0e3b5e);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
     }
     input[type="range"]::-webkit-slider-thumb{
-      -webkit-appearance:none; width:34px; height:34px; border-radius:50%; margin-top:-13px;
-      background:linear-gradient(180deg,var(--accent),#0369a1); box-shadow:0 6px 16px rgba(10,140,200,0.22);
+      -webkit-appearance:none;
+      width:38px; height:38px; border-radius:50%; margin-top:-14px;
+      background:linear-gradient(180deg,var(--accent),#0369a1);
+      box-shadow:0 6px 16px rgba(10,140,200,0.25);
     }
     .servoValue{ width:48px; text-align:center; font-weight:700; color:#e6eef6; font-size:15px; }
 
-    /* small helper text */
     .hint{ font-size:12px;color:var(--muted); margin-top:6px }
   </style>
 </head>
@@ -121,7 +136,10 @@
       <h2>ESP32 BLE Joystick Controller</h2>
       <div class="statusRow">
         <div id="status">未接続</div>
-        <button id="connectBtn">接続</button>
+        <div>
+          <button id="connectBtn">接続</button>
+          <button id="reconnectBtn" style="margin-left:8px;padding:8px 10px;border-radius:8px;background:#0b1220;border:1px solid rgba(255,255,255,0.04);color:var(--muted);cursor:pointer;">再接続</button>
+        </div>
       </div>
 
       <div class="controller">
@@ -142,11 +160,10 @@
     <div class="side card">
       <div style="display:flex;align-items:center;justify-content:space-between">
         <div style="font-weight:700">Servo Controls</div>
-        <div style="font-size:13px;color:var(--muted)">0〜180</div>
+        <div style="font-size:13px;color:var(--muted)">0〜180°</div>
       </div>
 
       <div class="sliders">
-        <!-- servo 1 -->
         <div class="servoCard">
           <div class="servoLabel">Servo 1</div>
           <div class="servoControl">
@@ -183,203 +200,280 @@
   </div>
 
 <script>
-  const SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0";
-  const CHARACTERISTIC_UUID = "abcd1234-1234-5678-1234-56789abcdef0";
+/* -------------------------
+   Configuration / UUIDs
+   ------------------------- */
+const SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0";
+const CHARACTERISTIC_UUID = "abcd1234-1234-5678-1234-56789abcdef0";
+const DEVICE_NAME_PREFIX = "MyRobotController_"; // ESP32 側でこの接頭辞で名前を付ける想定
 
-  let device = null;
-  let characteristic = null;
-  let connected = false;
+/* -------------------------
+   UI elements
+   ------------------------- */
+const statusEl = document.getElementById('status');
+const connectBtn = document.getElementById('connectBtn');
+const reconnectBtn = document.getElementById('reconnectBtn');
 
-  const statusBox = document.getElementById("status");
-  const connectBtn = document.getElementById("connectBtn");
+const joy = document.getElementById('joystick');
+const stick = document.getElementById('stick');
+const leftBtn = document.getElementById('leftRotate');
+const rightBtn = document.getElementById('rightRotate');
 
-  // joystick vars
-  const joy = document.getElementById("joystick");
-  const stick = document.getElementById("stick");
-  const radius = 160; // match half of 320
-  const stickR = 48; // half of 96
-  const DEADZONE = 0.15;
-  let centerX = radius, centerY = radius;
-  let active = false;
-  let omega = 0;
+const sEls = [
+  document.getElementById('s1'),
+  document.getElementById('s2'),
+  document.getElementById('s3'),
+  document.getElementById('s4'),
+];
+const sVals = [
+  document.getElementById('s1val'),
+  document.getElementById('s2val'),
+  document.getElementById('s3val'),
+  document.getElementById('s4val'),
+];
 
-  // servo elements
-  const sEls = [1,2,3,4].map(i => document.getElementById('s'+i));
-  const sVals = [1,2,3,4].map(i => document.getElementById('s'+i+'val'));
+/* -------------------------
+   BLE state
+   ------------------------- */
+let device = null;
+let server = null;
+let characteristic = null;
+let connected = false;
 
-  // update slider labels & send when changed (debounced)
-  for (let i=0;i<4;i++){
-    const el = sEls[i];
-    const disp = sVals[i];
-    const sendAfterChange = debounce(()=> sendJoystick(currentX.toFixed(2), currentY.toFixed(2), omega), 50);
-    el.addEventListener('input', ()=>{ disp.textContent = el.value; sendAfterChange(); });
-    // ensure pointer-events suitable for touch
-    el.addEventListener('pointerdown', (e)=> e.stopPropagation());
-  }
+/* -------------------------
+   Joystick state
+   ------------------------- */
+const DEADZONE = 0.15;
+let radius = 160; // will be updated by layout()
+let stickR = 48;
+let centerX = radius, centerY = radius;
+let active = false;
+let currentX = 0, currentY = 0;
+let omega = 0;
 
-  // connect / disconnect
-  connectBtn.addEventListener('click', async () => {
-    if (connected) { disconnectBLE(); return; }
-    await connectBLE();
-  });
+/* -------------------------
+   Helpers
+   ------------------------- */
+function applyDeadzone(v) {
+  const dz = DEADZONE;
+  if (Math.abs(v) < dz) return 0;
+  return v > 0 ? (v - dz)/(1 - dz) : (v + dz)/(1 - dz);
+}
 
-  async function connectBLE(){
-    if (connected) return;
-    statusBox.textContent = "接続要求中...";
-    try {
-      device = await navigator.bluetooth.requestDevice({
-        filters: [{ name: "ESP32_BLE_Server" }],
-        optionalServices: [SERVICE_UUID]
-      });
-      device.addEventListener('gattserverdisconnected', onDisconnected);
-      const server = await device.gatt.connect();
-      const service = await server.getPrimaryService(SERVICE_UUID);
-      characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-      connected = true;
-      connectBtn.textContent = "切断";
-      statusBox.textContent = "✅ 接続完了：ESP32_BLE_Server";
-    } catch (err) {
-      statusBox.textContent = "❌ 接続失敗: " + (err && err.message ? err.message : err);
-      connected = false;
-    }
-  }
+function debounce(fn, wait) {
+  let t;
+  return function(...a){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,a), wait); };
+}
 
-  function disconnectBLE(){
-    if (!device) return;
-    try { device.gatt.disconnect(); } catch(e){}
+/* -------------------------
+   BLE: connect / disconnect
+   ------------------------- */
+async function connectBLE() {
+  if (connected) return;
+  try {
+    statusEl.textContent = "接続要求中...";
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: DEVICE_NAME_PREFIX }],
+      optionalServices: [SERVICE_UUID]
+    });
+
+    statusEl.textContent = `接続中: ${device.name}`;
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+
+    server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+    connected = true;
+    statusEl.textContent = `✅ 接続完了: ${device.name}`;
+    connectBtn.textContent = "切断";
+    // on connect, send neutral state so robot is safe
+    sendCurrentState();
+  } catch (err) {
+    console.error('connectBLE error', err);
+    statusEl.textContent = `❌ 接続失敗`;
     connected = false;
     characteristic = null;
-    connectBtn.textContent = "接続";
-    statusBox.textContent = "切断済み";
   }
+}
 
-  function onDisconnected(){
-    connected = false;
-    characteristic = null;
-    connectBtn.textContent = "接続";
-    statusBox.textContent = "⚠️ 切断されました。再接続してください。";
-  }
+function disconnectBLE() {
+  if (!device) return;
+  try {
+    device.gatt.disconnect();
+  } catch (e) {}
+  connected = false;
+  characteristic = null;
+  statusEl.textContent = '切断済み';
+  connectBtn.textContent = '接続';
+}
 
-  // auto-reconnect attempt helper (not background looping aggressive)
-  async function tryReconnect(){
-    if (!device) return;
-    statusBox.textContent = "再接続試行...";
-    try {
-      const server = await device.gatt.connect();
-      const service = await server.getPrimaryService(SERVICE_UUID);
-      characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-      connected = true;
-      connectBtn.textContent = "切断";
-      statusBox.textContent = "🔄 自動再接続成功";
-    } catch (e) {
-      statusBox.textContent = "再接続失敗";
-    }
-  }
+function onDisconnected() {
+  connected = false;
+  characteristic = null;
+  statusEl.textContent = '⚠️ 切断されました';
+  connectBtn.textContent = '接続';
+}
 
-  // joystick math
-  function applyDeadzone(v){
-    const dz = DEADZONE;
-    if (Math.abs(v) < dz) return 0;
-    return v > 0 ? (v - dz)/(1 - dz) : (v + dz)/(1 - dz);
-  }
-
-  let currentX = 0, currentY = 0;
-
-  joy.addEventListener('pointerdown', (e)=>{ active=true; joy.setPointerCapture(e.pointerId); move(e); });
-  joy.addEventListener('pointermove', (e)=>{ if(active) move(e); });
-  joy.addEventListener('pointerup', (e)=>{ active=false; joy.releasePointerCapture(e.pointerId); reset(); });
-  joy.addEventListener('pointerleave', (e)=>{ if(active){ active=false; reset(); } });
-
-  function move(e){
-    const rect = joy.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    let dx = x - centerX;
-    let dy = y - centerY;
-    const dist = Math.min(Math.hypot(dx,dy), radius - stickR);
-    const angle = Math.atan2(dy, dx);
-    const posX = Math.cos(angle) * dist;
-    const posY = Math.sin(angle) * dist;
-    stick.style.left = (centerX + posX) + 'px';
-    stick.style.top = (centerY + posY) + 'px';
-    const rawX = posX / (radius - stickR);
-    const rawY = -posY / (radius - stickR); // y up positive
-    const adjX = applyDeadzone(rawX);
-    const adjY = applyDeadzone(rawY);
-    currentX = adjX; currentY = adjY;
-    sendJoystick(adjX.toFixed(2), adjY.toFixed(2), omega);
-  }
-
-  function reset(){
-    stick.style.left = centerX + 'px';
-    stick.style.top = centerY + 'px';
-    currentX = 0; currentY = 0;
-    sendJoystick(0,0,omega);
-  }
-
-  // rotation buttons: pointer events so works on touch
-  const leftBtn = document.getElementById('leftRotate');
-  const rightBtn = document.getElementById('rightRotate');
-
-  const pressStart = (btn, val)=>{
-    omega = val; btn.classList.add('pressed'); sendJoystick(currentX.toFixed(2), currentY.toFixed(2), omega);
-  };
-  const pressEnd = (btn)=>{
-    omega = 0; btn.classList.remove('pressed'); sendJoystick(currentX.toFixed(2), currentY.toFixed(2), omega);
-  };
-
-  ['pointerdown','touchstart'].forEach(ev => {
-    leftBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); pressStart(leftBtn,-1); });
-    rightBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); pressStart(rightBtn,1); });
-  });
-  ['pointerup','pointercancel','touchend','touchcancel','mouseleave'].forEach(ev=>{
-    leftBtn.addEventListener(ev, ()=> pressEnd(leftBtn));
-    rightBtn.addEventListener(ev, ()=> pressEnd(rightBtn));
-  });
-
-  // sendJoystick: builds string vx,vy,w,s1,s2,s3,s4
-  async function sendJoystick(x,y,w){
-    if (!connected || !characteristic) {
-      statusBox.textContent = "未接続: 送信スキップ";
-      return;
-    }
-    const s1 = parseInt(sEls[0].value);
-    const s2 = parseInt(sEls[1].value);
-    const s3 = parseInt(sEls[2].value);
-    const s4 = parseInt(sEls[3].value);
-    const msg = `${x},${y},${w},${s1},${s2},${s3},${s4}`;
+/* -------------------------
+   send data format (text CSV)
+   vx,vy,w,s1,s2,s3,s4
+   ------------------------- */
+async function sendBLEData(vx, vy, w, s1, s2, s3, s4) {
+  if (!connected || !characteristic) return;
+  const msg = `${vx},${vy},${w},${s1},${s2},${s3},${s4}`;
+  try {
     const enc = new TextEncoder();
-    try {
-      await characteristic.writeValue(enc.encode(msg));
-      statusBox.textContent = `送信: vx=${x}, vy=${y}, ω=${w}  s:[${s1},${s2},${s3},${s4}]`;
-    } catch (e) {
-      statusBox.textContent = "⚠️ 送信エラー: 再接続を試みます";
-      tryReconnect();
-    }
+    await characteristic.writeValue(enc.encode(msg));
+    statusEl.textContent = `送信: vx=${vx}, vy=${vy}, ω=${w}  s:[${s1},${s2},${s3},${s4}]`;
+  } catch (e) {
+    console.warn('writeValue failed', e);
+    statusEl.textContent = "⚠️ 送信エラー: 再接続を試みます";
+    // leave characteristic null; user can press 再接続 or 接続 again
   }
+}
 
-  // debounce helper
-  function debounce(fn, wait){
-    let t;
-    return function(...a){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,a), wait); };
+/* convenience that reads current sliders and sends */
+function sendCurrentState() {
+  const s1 = parseInt(sEls[0].value);
+  const s2 = parseInt(sEls[1].value);
+  const s3 = parseInt(sEls[2].value);
+  const s4 = parseInt(sEls[3].value);
+  sendBLEData(currentX.toFixed(2), currentY.toFixed(2), omega, s1, s2, s3, s4);
+}
+
+/* -------------------------
+   UI wiring
+   ------------------------- */
+connectBtn.addEventListener('click', async () => {
+  if (connected) { disconnectBLE(); return; }
+  await connectBLE();
+});
+
+// reconnect button tries to re-open (not aggressive)
+reconnectBtn.addEventListener('click', async () => {
+  if (!device) { statusEl.textContent = 'デバイス未選択 - 接続からやり直してください'; return; }
+  statusEl.textContent = '再接続試行...';
+  try {
+    server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+    connected = true;
+    statusEl.textContent = `🔄 再接続成功: ${device.name}`;
+    connectBtn.textContent = '切断';
+    sendCurrentState();
+  } catch (e) {
+    console.warn('reconnect failed', e);
+    statusEl.textContent = '再接続失敗';
   }
+});
 
-  // initialize stick center positions on load/resize
-  function layout(){
-    // compute center relative coords
-    const rect = joy.getBoundingClientRect();
-    centerX = rect.width / 2;
-    centerY = rect.height / 2;
-    // ensure stick at center
-    stick.style.left = centerX + 'px';
-    stick.style.top = centerY + 'px';
+/* slider handling: show values and debounce sends */
+for (let i = 0; i < sEls.length; i++) {
+  const el = sEls[i];
+  const disp = sVals[i];
+  const sendAfter = debounce(() => sendCurrentState(), 60);
+  el.addEventListener('input', () => {
+    disp.textContent = el.value;
+    sendAfter();
+  });
+  // ensure slider touches don't move joystick
+  el.addEventListener('pointerdown', (e) => e.stopPropagation());
+}
+
+/* rotation buttons: pointer events for touch */
+function pressStart(btn, val) {
+  omega = val;
+  btn.classList.add('pressed');
+  sendCurrentState();
+}
+function pressEnd(btn) {
+  omega = 0;
+  btn.classList.remove('pressed');
+  sendCurrentState();
+}
+leftBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); pressStart(leftBtn, -1); });
+rightBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); pressStart(rightBtn, 1); });
+['pointerup','pointercancel','touchend','touchcancel','mouseleave'].forEach(ev => {
+  leftBtn.addEventListener(ev, () => pressEnd(leftBtn));
+  rightBtn.addEventListener(ev, () => pressEnd(rightBtn));
+});
+
+/* joystick events */
+function layout() {
+  const rect = joy.getBoundingClientRect();
+  radius = rect.width / 2;
+  // choose stickR proportional to size
+  stickR = Math.max(36, rect.width * 0.12);
+  centerX = rect.width / 2;
+  centerY = rect.height / 2;
+  // place stick center
+  stick.style.left = centerX + 'px';
+  stick.style.top = centerY + 'px';
+}
+window.addEventListener('load', layout);
+window.addEventListener('resize', layout);
+
+joy.addEventListener('pointerdown', (e) => {
+  active = true;
+  try { joy.setPointerCapture(e.pointerId); } catch (e) {}
+  moveStick(e);
+});
+joy.addEventListener('pointermove', (e) => { if (active) moveStick(e); });
+joy.addEventListener('pointerup', (e) => { active = false; try { joy.releasePointerCapture(e.pointerId); } catch(e){}; resetStick(); });
+joy.addEventListener('pointerleave', (e) => { if (active) { active = false; resetStick(); } });
+
+const throttledSend = debounce(() => sendCurrentState(), 40);
+
+function moveStick(e) {
+  const rect = joy.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  let dx = x - centerX;
+  let dy = y - centerY;
+  const maxDist = Math.max(1, radius - stickR - 4);
+  const dist = Math.min(Math.hypot(dx, dy), maxDist);
+  const angle = Math.atan2(dy, dx);
+  const posX = Math.cos(angle) * dist;
+  const posY = Math.sin(angle) * dist;
+  stick.style.left = (centerX + posX) + 'px';
+  stick.style.top = (centerY + posY) + 'px';
+
+  const rawX = posX / (radius - stickR);
+  const rawY = -posY / (radius - stickR); // up is positive
+  currentX = applyDeadzone(rawX);
+  currentY = applyDeadzone(rawY);
+  throttledSend();
+}
+
+function resetStick() {
+  stick.style.left = centerX + 'px';
+  stick.style.top = centerY + 'px';
+  currentX = 0; currentY = 0;
+  sendCurrentState();
+}
+
+/* initial neutral send after short delay */
+setTimeout(() => {
+  // ensure initial slider text matches values
+  for (let i = 0; i < sEls.length; i++) sVals[i].textContent = sEls[i].value;
+  sendCurrentState();
+}, 400);
+
+/* keyboard support (for desktop testing) */
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') { currentX = -1; sendCurrentState(); }
+  if (e.key === 'ArrowRight') { currentX = 1; sendCurrentState(); }
+  if (e.key === 'ArrowUp') { currentY = 1; sendCurrentState(); }
+  if (e.key === 'ArrowDown') { currentY = -1; sendCurrentState(); }
+});
+
+/* small safety: catch page visibility change to optionally pause sends (no-op for now) */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    // optionally send neutral to be safe
+    // sendBLEData(0,0,0, ...current servos...);
   }
-  window.addEventListener('resize', layout);
-  window.addEventListener('load', layout);
-
-  // initial send of neutral state + servo defaults after short delay
-  setTimeout(()=> sendJoystick(0,0,0), 400);
-
+});
 </script>
 </body>
 </html>
