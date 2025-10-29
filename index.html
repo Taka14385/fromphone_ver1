@@ -201,23 +201,27 @@
   </div>
 
   <script>
-    let bleDevice, bleCharacteristic;
+let bleDevice, bleCharacteristic;
 
-    async function connectBLE() {
-      try {
-        bleDevice = await navigator.bluetooth.requestDevice({
-          filters: [{ namePrefix: "ESP32" }],
-          optionalServices: ["0000ffe0-0000-1000-8000-00805f9b34fb"]
-        });
-        const server = await bleDevice.gatt.connect();
-        const service = await server.getPrimaryService("0000ffe0-0000-1000-8000-00805f9b34fb");
-        bleCharacteristic = await service.getCharacteristic("0000ffe1-0000-1000-8000-00805f9b34fb");
-        document.getElementById("status").textContent = "接続済み";
-      } catch (error) {
-        console.error(error);
-        document.getElementById("status").textContent = "接続エラー";
-      }
-    }
+async function connectBLE() {
+  try {
+    bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "MyRobotController_" }],
+      optionalServices: ["12345678-1234-5678-1234-56789abcdef0"]
+    });
+
+    const server = await bleDevice.gatt.connect();
+    const service = await server.getPrimaryService("12345678-1234-5678-1234-56789abcdef0");
+    bleCharacteristic = await service.getCharacteristic("abcd1234-1234-5678-1234-56789abcdef0");
+
+    statusEl.textContent = "接続済み";
+    statusEl.style.color = "#0ea5e9";
+  } catch (error) {
+    console.error("接続エラー:", error);
+    statusEl.textContent = "接続失敗";
+    statusEl.style.color = "#ef4444";
+  }
+}
 
     function sendBLEData(type, value) {
       if (!bleCharacteristic) return;
@@ -237,3 +241,4 @@
   </script>
 </body>
 </html>
+
