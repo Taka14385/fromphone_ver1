@@ -154,6 +154,15 @@
         </div>
       </div>
 
+      <!-- 🔽 Motor スライダー -->
+      <div class="servoCard" style="margin-top:10px;">
+        <div class="servoLabel">Motor</div>
+        <div class="servoControl">
+          <input id="motorSlider" type="range" min="-1" max="1" value="0" step="0.01" />
+          <div class="servoValue" id="motorVal">0.00</div>
+        </div>
+      </div>
+
       <div class="hint">※ スティックは指で押してドラッグ、指を離すと中心に戻ります。回転は押している間だけ回転コマンド。</div>
     </div>
 
@@ -187,293 +196,44 @@
             <div class="servoValue" id="s3val">90</div>
           </div>
         </div>
-
-        <div class="servoCard">
-          <div class="servoLabel">Servo 4</div>
-          <div class="servoControl">
-            <input id="s4" type="range" min="0" max="180" value="90" />
-            <div class="servoValue" id="s4val">90</div>
-          </div>
-        </div>
       </div>
     </div>
   </div>
 
-<script>
-/* -------------------------
-   Configuration / UUIDs
-   ------------------------- */
-const SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0";
-const CHARACTERISTIC_UUID = "abcd1234-1234-5678-1234-56789abcdef0";
-const DEVICE_NAME_PREFIX = "MyRobotController_"; // ESP32 側でこの接頭辞で名前を付ける想定
+  <script>
+    let bleDevice, bleCharacteristic;
 
-/* -------------------------
-   UI elements
-   ------------------------- */
-const statusEl = document.getElementById('status');
-const connectBtn = document.getElementById('connectBtn');
-const reconnectBtn = document.getElementById('reconnectBtn');
+    async function connectBLE() {
+      try {
+        bleDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ namePrefix: "ESP32" }],
+          optionalServices: ["0000ffe0-0000-1000-8000-00805f9b34fb"]
+        });
+        const server = await bleDevice.gatt.connect();
+        const service = await server.getPrimaryService("0000ffe0-0000-1000-8000-00805f9b34fb");
+        bleCharacteristic = await service.getCharacteristic("0000ffe1-0000-1000-8000-00805f9b34fb");
+        document.getElementById("status").textContent = "接続済み";
+      } catch (error) {
+        console.error(error);
+        document.getElementById("status").textContent = "接続エラー";
+      }
+    }
 
-const joy = document.getElementById('joystick');
-const stick = document.getElementById('stick');
-const leftBtn = document.getElementById('leftRotate');
-const rightBtn = document.getElementById('rightRotate');
+    function sendBLEData(type, value) {
+      if (!bleCharacteristic) return;
+      const msg = `${type}:${value}\n`;
+      bleCharacteristic.writeValue(new TextEncoder().encode(msg));
+    }
 
-const sEls = [
-  document.getElementById('s1'),
-  document.getElementById('s2'),
-  document.getElementById('s3'),
-  document.getElementById('s4'),
-];
-const sVals = [
-  document.getElementById('s1val'),
-  document.getElementById('s2val'),
-  document.getElementById('s3val'),
-  document.getElementById('s4val'),
-];
+    document.getElementById("connectBtn").addEventListener("click", connectBLE);
 
-/* -------------------------
-   BLE state
-   ------------------------- */
-let device = null;
-let server = null;
-let characteristic = null;
-let connected = false;
-
-/* -------------------------
-   Joystick state
-   ------------------------- */
-const DEADZONE = 0.15;
-let radius = 160; // will be updated by layout()
-let stickR = 48;
-let centerX = radius, centerY = radius;
-let active = false;
-let currentX = 0, currentY = 0;
-let omega = 0;
-
-/* -------------------------
-   Helpers
-   ------------------------- */
-function applyDeadzone(v) {
-  const dz = DEADZONE;
-  if (Math.abs(v) < dz) return 0;
-  return v > 0 ? (v - dz)/(1 - dz) : (v + dz)/(1 - dz);
-}
-
-function debounce(fn, wait) {
-  let t;
-  return function(...a){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,a), wait); };
-}
-
-/* -------------------------
-   BLE: connect / disconnect
-   ------------------------- */
-async function connectBLE() {
-  if (connected) return;
-  try {
-    statusEl.textContent = "接続要求中...";
-    device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: DEVICE_NAME_PREFIX }],
-      optionalServices: [SERVICE_UUID]
+    const motorSlider = document.getElementById("motorSlider");
+    const motorVal = document.getElementById("motorVal");
+    motorSlider.addEventListener("input", () => {
+      const val = parseFloat(motorSlider.value).toFixed(2);
+      motorVal.textContent = val;
+      sendBLEData("motor", val);
     });
-
-    statusEl.textContent = `接続中: ${device.name}`;
-    device.addEventListener('gattserverdisconnected', onDisconnected);
-
-    server = await device.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-    connected = true;
-    statusEl.textContent = `✅ 接続完了: ${device.name}`;
-    connectBtn.textContent = "切断";
-    // on connect, send neutral state so robot is safe
-    sendCurrentState();
-  } catch (err) {
-    console.error('connectBLE error', err);
-    statusEl.textContent = `❌ 接続失敗`;
-    connected = false;
-    characteristic = null;
-  }
-}
-
-function disconnectBLE() {
-  if (!device) return;
-  try {
-    device.gatt.disconnect();
-  } catch (e) {}
-  connected = false;
-  characteristic = null;
-  statusEl.textContent = '切断済み';
-  connectBtn.textContent = '接続';
-}
-
-function onDisconnected() {
-  connected = false;
-  characteristic = null;
-  statusEl.textContent = '⚠️ 切断されました';
-  connectBtn.textContent = '接続';
-}
-
-/* -------------------------
-   send data format (text CSV)
-   vx,vy,w,s1,s2,s3,s4
-   ------------------------- */
-async function sendBLEData(vx, vy, w, s1, s2, s3, s4) {
-  if (!connected || !characteristic) return;
-  const msg = `${vx},${vy},${w},${s1},${s2},${s3},${s4}`;
-  try {
-    const enc = new TextEncoder();
-    await characteristic.writeValue(enc.encode(msg));
-    statusEl.textContent = `送信: vx=${vx}, vy=${vy}, ω=${w}  s:[${s1},${s2},${s3},${s4}]`;
-  } catch (e) {
-    console.warn('writeValue failed', e);
-    statusEl.textContent = "⚠️ 送信エラー: 再接続を試みます";
-    // leave characteristic null; user can press 再接続 or 接続 again
-  }
-}
-
-/* convenience that reads current sliders and sends */
-function sendCurrentState() {
-  const s1 = parseInt(sEls[0].value);
-  const s2 = parseInt(sEls[1].value);
-  const s3 = parseInt(sEls[2].value);
-  const s4 = parseInt(sEls[3].value);
-  sendBLEData(currentX.toFixed(2), currentY.toFixed(2), omega, s1, s2, s3, s4);
-}
-
-/* -------------------------
-   UI wiring
-   ------------------------- */
-connectBtn.addEventListener('click', async () => {
-  if (connected) { disconnectBLE(); return; }
-  await connectBLE();
-});
-
-// reconnect button tries to re-open (not aggressive)
-reconnectBtn.addEventListener('click', async () => {
-  if (!device) { statusEl.textContent = 'デバイス未選択 - 接続からやり直してください'; return; }
-  statusEl.textContent = '再接続試行...';
-  try {
-    server = await device.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-    connected = true;
-    statusEl.textContent = `🔄 再接続成功: ${device.name}`;
-    connectBtn.textContent = '切断';
-    sendCurrentState();
-  } catch (e) {
-    console.warn('reconnect failed', e);
-    statusEl.textContent = '再接続失敗';
-  }
-});
-
-/* slider handling: show values and debounce sends */
-for (let i = 0; i < sEls.length; i++) {
-  const el = sEls[i];
-  const disp = sVals[i];
-  const sendAfter = debounce(() => sendCurrentState(), 60);
-  el.addEventListener('input', () => {
-    disp.textContent = el.value;
-    sendAfter();
-  });
-  // ensure slider touches don't move joystick
-  el.addEventListener('pointerdown', (e) => e.stopPropagation());
-}
-
-/* rotation buttons: pointer events for touch */
-function pressStart(btn, val) {
-  omega = val;
-  btn.classList.add('pressed');
-  sendCurrentState();
-}
-function pressEnd(btn) {
-  omega = 0;
-  btn.classList.remove('pressed');
-  sendCurrentState();
-}
-leftBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); pressStart(leftBtn, -1); });
-rightBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); pressStart(rightBtn, 1); });
-['pointerup','pointercancel','touchend','touchcancel','mouseleave'].forEach(ev => {
-  leftBtn.addEventListener(ev, () => pressEnd(leftBtn));
-  rightBtn.addEventListener(ev, () => pressEnd(rightBtn));
-});
-
-/* joystick events */
-function layout() {
-  const rect = joy.getBoundingClientRect();
-  radius = rect.width / 2;
-  // choose stickR proportional to size
-  stickR = Math.max(36, rect.width * 0.12);
-  centerX = rect.width / 2;
-  centerY = rect.height / 2;
-  // place stick center
-  stick.style.left = centerX + 'px';
-  stick.style.top = centerY + 'px';
-}
-window.addEventListener('load', layout);
-window.addEventListener('resize', layout);
-
-joy.addEventListener('pointerdown', (e) => {
-  active = true;
-  try { joy.setPointerCapture(e.pointerId); } catch (e) {}
-  moveStick(e);
-});
-joy.addEventListener('pointermove', (e) => { if (active) moveStick(e); });
-joy.addEventListener('pointerup', (e) => { active = false; try { joy.releasePointerCapture(e.pointerId); } catch(e){}; resetStick(); });
-joy.addEventListener('pointerleave', (e) => { if (active) { active = false; resetStick(); } });
-
-const throttledSend = debounce(() => sendCurrentState(), 40);
-
-function moveStick(e) {
-  const rect = joy.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  let dx = x - centerX;
-  let dy = y - centerY;
-  const maxDist = Math.max(1, radius - stickR - 4);
-  const dist = Math.min(Math.hypot(dx, dy), maxDist);
-  const angle = Math.atan2(dy, dx);
-  const posX = Math.cos(angle) * dist;
-  const posY = Math.sin(angle) * dist;
-  stick.style.left = (centerX + posX) + 'px';
-  stick.style.top = (centerY + posY) + 'px';
-
-  const rawX = posX / (radius - stickR);
-  const rawY = -posY / (radius - stickR); // up is positive
-  currentX = applyDeadzone(rawX);
-  currentY = applyDeadzone(rawY);
-  throttledSend();
-}
-
-function resetStick() {
-  stick.style.left = centerX + 'px';
-  stick.style.top = centerY + 'px';
-  currentX = 0; currentY = 0;
-  sendCurrentState();
-}
-
-/* initial neutral send after short delay */
-setTimeout(() => {
-  // ensure initial slider text matches values
-  for (let i = 0; i < sEls.length; i++) sVals[i].textContent = sEls[i].value;
-  sendCurrentState();
-}, 400);
-
-/* keyboard support (for desktop testing) */
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowLeft') { currentX = -1; sendCurrentState(); }
-  if (e.key === 'ArrowRight') { currentX = 1; sendCurrentState(); }
-  if (e.key === 'ArrowUp') { currentY = 1; sendCurrentState(); }
-  if (e.key === 'ArrowDown') { currentY = -1; sendCurrentState(); }
-});
-
-/* small safety: catch page visibility change to optionally pause sends (no-op for now) */
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    // optionally send neutral to be safe
-    // sendBLEData(0,0,0, ...current servos...);
-  }
-});
-</script>
+  </script>
 </body>
 </html>
